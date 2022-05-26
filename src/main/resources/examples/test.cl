@@ -12,3 +12,12 @@ function fibo(x) {
 
     return fibo(x - 1) + fibo(x - 2);
 }
+
+q = -1;
+let result = fibo(q);
+print(result);
+//let sum = 0;
+//for (let i = 1; i < result; i=i+1) {
+//    print(i);
+//    sum += i;
+//}

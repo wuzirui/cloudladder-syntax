@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
 
-public class CLCompiler implements antlr.CLListener {
+public class CLAstGenenrator implements antlr.CLListener {
     @Getter
     private Stack<ASTNode> ast = new Stack<>();
     @Getter
@@ -84,16 +84,22 @@ public class CLCompiler implements antlr.CLListener {
                 ((CLFunctionCall) parent).args.add((CLExpression) item);
             }
         }
+        else if (parent instanceof CLUnaryExpression) {
+            ((CLUnaryExpression) parent).operand = (CLExpression) item;
+        }
+        else if (parent instanceof CLExpressionStatement) {
+            ((CLExpressionStatement) parent).expression = (CLExpression) item;
+        }
         else {
-            throw new RuntimeException("unexpected ast structure\n" + ast);
+            throw new RuntimeException("unexpected ast structure\n" + parent);
         }
     }
 
     @Override public void enterExpUnaryExpression(CL.ExpUnaryExpressionContext ctx) {
-
+        ast.push(new CLUnaryExpression(ctx.op.getText()));
     }
     @Override public void exitExpUnaryExpression(CL.ExpUnaryExpressionContext ctx) {
-
+        exitExpression();
     }
 
     @Override public void enterExpFieldAccess(CL.ExpFieldAccessContext ctx) { }
@@ -159,9 +165,20 @@ public class CLCompiler implements antlr.CLListener {
     @Override public void exitStatement(CL.StatementContext ctx) { }
 
     @Override public void enterExpressionStatement(CL.ExpressionStatementContext ctx) {
-
+        ast.push(new CLExpressionStatement());
     }
     @Override public void exitExpressionStatement(CL.ExpressionStatementContext ctx) {
+        CLExpressionStatement item = (CLExpressionStatement) ast.pop();
+        ASTNode parent = ast.peek();
+        if (parent instanceof CLProgram) {
+            ((CLProgram) parent).addItem(item);
+        }
+        else if (parent instanceof CLCompoundStatment) {
+            ((CLCompoundStatment) parent).getChildren().add(item);
+        }
+        else {
+            throw new RuntimeException("unknown ast structure, " + parent);
+        }
     }
 
     @Override public void enterReturnStatement(CL.ReturnStatementContext ctx) {
@@ -215,13 +232,17 @@ public class CLCompiler implements antlr.CLListener {
         CLBlock namespace = null;
         ASTNode parent = ast.peek();
         if (parent instanceof CLFunctionDef) {
-            // 在定义函数时已经创建了新的名字空间
+            // 在函数构造函数中时已经创建了新的名字空间
             namespace = ((CLFunctionDef) parent).getBody();
             ast.push(new CLCompoundStatment(namespace));
+            currentBlock = namespace;
+            assert currentBlock.getParent() == ((CLFunctionDef) parent).parent;
         }
         else if (parent instanceof CLSelection) {
             namespace = new CLBlock();
+            namespace.setParent(currentBlock);
             ast.push(new CLCompoundStatment(namespace));
+            currentBlock = namespace;
         }
         else {
             throw new RuntimeException("unexpected ast structure\n" + ast);
@@ -230,6 +251,8 @@ public class CLCompiler implements antlr.CLListener {
     }
     @Override public void exitCompoundStatement(CL.CompoundStatementContext ctx) {
         CLCompoundStatment item = (CLCompoundStatment) ast.pop();
+        if (currentBlock != null)
+            currentBlock = currentBlock.getParent();
         var parent = ast.peek();
         if (parent instanceof CLFunctionDef) {
             ((CLFunctionDef) ast.peek()).children = item;
