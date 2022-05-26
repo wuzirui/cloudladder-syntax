@@ -59,6 +59,12 @@ public class CLASTGenerator implements antlr.CLListener {
         if (parent instanceof CLDataDefinition) {
             ((CLDataDefinition) parent).addInitExpression(vars, (CLExpression) item);
         }
+        else if (parent instanceof CLForStatement) {
+            ((CLForStatement) parent).condition = (CLExpression) item;
+        }
+        else if (parent instanceof CLWhileStatement) {
+            ((CLWhileStatement) parent).condition = (CLExpression) item;
+        }
         else if (parent instanceof CLAssignmentStatement) {
             ((CLAssignmentStatement) parent).expression = (CLExpression) item;
         }
@@ -93,6 +99,27 @@ public class CLASTGenerator implements antlr.CLListener {
         }
         else {
             throw new RuntimeException("unexpected ast structure\n" + parent);
+        }
+    }
+
+    private void generalExitStatement() {
+        CLStatement item = (CLStatement) ast.pop();
+        ASTNode parent = ast.peek();
+
+        if (parent instanceof CLProgram) {
+            ((CLProgram) parent).addItem(item);
+        }
+        else if (parent instanceof CLCompoundStatment) {
+            ((CLCompoundStatment) parent).getChildren().add(item);
+        }
+        else if (parent instanceof CLForStatement) {
+            ((CLForStatement) parent).body = item;
+        }
+        else if (parent instanceof CLWhileStatement) {
+            ((CLWhileStatement) parent).body = item;
+        }
+        else {
+            throw new RuntimeException("unknown ast structure, " + parent);
         }
     }
 
@@ -169,17 +196,7 @@ public class CLASTGenerator implements antlr.CLListener {
         ast.push(new CLExpressionStatement());
     }
     @Override public void exitExpressionStatement(CL.ExpressionStatementContext ctx) {
-        CLExpressionStatement item = (CLExpressionStatement) ast.pop();
-        ASTNode parent = ast.peek();
-        if (parent instanceof CLProgram) {
-            ((CLProgram) parent).addItem(item);
-        }
-        else if (parent instanceof CLCompoundStatment) {
-            ((CLCompoundStatment) parent).getChildren().add(item);
-        }
-        else {
-            throw new RuntimeException("unknown ast structure, " + parent);
-        }
+        generalExitStatement();
     }
 
     @Override public void enterReturnStatement(CL.ReturnStatementContext ctx) {
@@ -187,9 +204,12 @@ public class CLASTGenerator implements antlr.CLListener {
     }
     @Override public void exitReturnStatement(CL.ReturnStatementContext ctx) {
         CLReturnStatement item = (CLReturnStatement) ast.pop();
-        assert ast.peek() instanceof CLCompoundStatment;
-        CLCompoundStatment parent = (CLCompoundStatment) ast.peek();
-        parent.getChildren().add(item);
+        ASTNode parent = ast.peek();
+        if (parent instanceof CLProgram) {
+            throw new RuntimeException("[Error] cannot use return statement outside of a function definition");
+        }
+        ast.push(item);
+        generalExitStatement();
     }
 
     @Override public void enterBreakStatement(CL.BreakStatementContext ctx) { }
@@ -221,11 +241,17 @@ public class CLASTGenerator implements antlr.CLListener {
     @Override public void exitDataStatementItem(CL.DataStatementItemContext ctx) {
         CLDataDefinition item = (CLDataDefinition) ast.pop();
         var parent = ast.peek();
-        if (parent instanceof CLProgram) {
-            ((CLProgram) ast.peek()).addItem(item);
+        if (parent instanceof CLForStatement) {
+            if (((CLForStatement) parent).init == null) {
+                ((CLForStatement) parent).init = item;
+            }
+            else {
+                throw new RuntimeException("invalid for iteration: " + parent);
+            }
         }
         else {
-            throw new RuntimeException("unexpected ast structure");
+            ast.push(item);
+            generalExitStatement();
         }
     }
 
@@ -239,14 +265,11 @@ public class CLASTGenerator implements antlr.CLListener {
             currentBlock = namespace;
             assert currentBlock.getParent() == ((CLFunctionDef) parent).parent;
         }
-        else if (parent instanceof CLSelection) {
+        else {
             namespace = new CLBlock();
             namespace.setParent(currentBlock);
             ast.push(new CLCompoundStatment(namespace));
             currentBlock = namespace;
-        }
-        else {
-            throw new RuntimeException("unexpected ast structure\n" + ast);
         }
 
     }
@@ -270,7 +293,8 @@ public class CLASTGenerator implements antlr.CLListener {
             }
         }
         else {
-            throw new RuntimeException("unexpected ast structure\n" + ast);
+            ast.push(item);
+            generalExitStatement();
         }
     }
 
@@ -279,17 +303,7 @@ public class CLASTGenerator implements antlr.CLListener {
     }
 
     @Override public void exitSelectionStatement(CL.SelectionStatementContext ctx) {
-        CLSelection item = (CLSelection) ast.pop();
-        var parent = ast.peek();
-        if (parent instanceof CLProgram) {
-            ((CLProgram) parent).addItem(item);
-        }
-        else if (parent instanceof CLCompoundStatment) {
-            ((CLCompoundStatment) parent).getChildren().add(item);
-        }
-        else {
-            throw new RuntimeException("unexpected ast structure\n" + ast);
-        }
+        generalExitStatement();
     }
     @Override public void enterAssignmentStatement(CL.AssignmentStatementContext ctx) {
         ast.push(new CLAssignmentStatement());
@@ -297,11 +311,20 @@ public class CLASTGenerator implements antlr.CLListener {
     @Override public void exitAssignmentStatement(CL.AssignmentStatementContext ctx) {
         CLAssignmentStatement item = (CLAssignmentStatement) ast.pop();
         var parent = ast.peek();
-        if (parent instanceof CLProgram) {
-            ((CLProgram) ast.peek()).addItem(item);
+        if (parent instanceof CLForStatement) {
+            if (((CLForStatement) parent).init == null) {
+                ((CLForStatement) parent).init = item;
+            }
+            else if (((CLForStatement) parent).post == null) {
+                ((CLForStatement) parent).post = item;
+            }
+            else {
+                throw new RuntimeException("invalid for iteration: " + parent);
+            }
         }
         else {
-            throw new RuntimeException("unexpected ast structure");
+            ast.push(item);
+            generalExitStatement();
         }
     }
     @Override public void enterAssignArray2(CL.AssignArray2Context ctx) { }
@@ -324,12 +347,24 @@ public class CLASTGenerator implements antlr.CLListener {
     @Override public void exitAssignArray1(CL.AssignArray1Context ctx) { }
     @Override public void enterAssignmentOperator(CL.AssignmentOperatorContext ctx) { }
     @Override public void exitAssignmentOperator(CL.AssignmentOperatorContext ctx) { }
-    @Override public void enterWhileStatement(CL.WhileStatementContext ctx) { }
-    @Override public void exitWhileStatement(CL.WhileStatementContext ctx) { }
-    @Override public void enterForStatement(CL.ForStatementContext ctx) { }
-    @Override public void exitForStatement(CL.ForStatementContext ctx) { }
-    @Override public void enterForDeclStatement(CL.ForDeclStatementContext ctx) { }
-    @Override public void exitForDeclStatement(CL.ForDeclStatementContext ctx) { }
+    @Override public void enterWhileStatement(CL.WhileStatementContext ctx) {
+        ast.push(new CLWhileStatement());
+    }
+    @Override public void exitWhileStatement(CL.WhileStatementContext ctx) {
+        generalExitStatement();
+    }
+    @Override public void enterForStatement(CL.ForStatementContext ctx) {
+        ast.push(new CLForStatement());
+    }
+    @Override public void exitForStatement(CL.ForStatementContext ctx) {
+        generalExitStatement();
+    }
+    @Override public void enterForDeclStatement(CL.ForDeclStatementContext ctx) {
+        ast.push(new CLForStatement());
+    }
+    @Override public void exitForDeclStatement(CL.ForDeclStatementContext ctx) {
+        generalExitStatement();
+    }
     @Override public void enterFunctionDefinition(CL.FunctionDefinitionContext ctx) {
         String name = ctx.Identifier().getText();
         if (funcs.contains(name, currentBlock.getName())) {
