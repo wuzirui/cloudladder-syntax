@@ -9,20 +9,21 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Stack;
 
-public class CLAstGenenrator implements antlr.CLListener {
+public class CLASTGenerator implements antlr.CLListener {
     @Getter
-    private Stack<ASTNode> ast = new Stack<>();
+    private final Stack<ASTNode> ast = new Stack<>();
     @Getter
-    private CLVars vars = new CLVars();
+    private final CLVars vars = new CLVars();
     @Getter
-    private List<CLError> errors = new ArrayList<>();
+    private final List<CLError> errors = new ArrayList<>();
     @Getter
     private CLBlock global;
     private CLBlock currentBlock;
     @Getter
-    private CLFunctionDefs funcs = new CLFunctionDefs();
+    private final CLFunctionDefs funcs = new CLFunctionDefs();
 
     private CLBlock findNameBlock(String varName) {
         CLBlock current = currentBlock;
@@ -69,7 +70,7 @@ public class CLAstGenenrator implements antlr.CLListener {
         }
         else if (parent instanceof CLLeftAssociativeExpression) {
             if (item instanceof CLLeftAssociativeExpression
-                    && ((CLLeftAssociativeExpression) item).op == ((CLLeftAssociativeExpression) parent).op) {
+                    && Objects.equals(((CLLeftAssociativeExpression) item).op, ((CLLeftAssociativeExpression) parent).op)) {
                 ((CLLeftAssociativeExpression) parent).operands.addAll(((CLLeftAssociativeExpression) item).operands);
             }
             else {
@@ -229,7 +230,7 @@ public class CLAstGenenrator implements antlr.CLListener {
     }
 
     @Override public void enterCompoundStatement(CL.CompoundStatementContext ctx) {
-        CLBlock namespace = null;
+        CLBlock namespace;
         ASTNode parent = ast.peek();
         if (parent instanceof CLFunctionDef) {
             // 在函数构造函数中时已经创建了新的名字空间
